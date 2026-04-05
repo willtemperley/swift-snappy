@@ -96,19 +96,21 @@ public extension Data {
 
 
     // MARK: - Data Uncompression
-
     private func _uncompress() -> (data: Data, error: Int32) {
-        let uncompressedDataLength = self.withUnsafeBytes {
-            var uncompressedDataLength: Int = 0
-            snappy_uncompressed_length($0.baseAddress, self.count, &uncompressedDataLength)
-            return uncompressedDataLength
+        let uncompressedLength = self.withUnsafeBytes { ptr -> Int in
+            var len = 0
+            snappy_uncompressed_length(ptr.baseAddress, self.count, &len)
+            return len
         }
-        let result: (buffer: UnsafeMutablePointer<Int8>, error: Int32) = self.withUnsafeBytes {
-            let uncompressedDataBuffer = UnsafeMutablePointer<Int8>.allocate(capacity: uncompressedDataLength)
-            let error = snappy_uncompress($0.baseAddress, self.count, uncompressedDataBuffer)
-            return (uncompressedDataBuffer, abs(error))
+        let buffer = UnsafeMutablePointer<Int8>.allocate(capacity: uncompressedLength)
+        defer { buffer.deallocate() }
+        let error = self.withUnsafeBytes {
+            abs(snappy_uncompress($0.baseAddress, self.count, buffer))
         }
-        return (Data(bytesNoCopy: result.buffer, count: uncompressedDataLength, deallocator: .none), result.error)
+        guard error == 0 else {
+            return (Data(), error)
+        }
+        return (Data(bytes: buffer, count: uncompressedLength), error)
     }
 
     /// Uncompresses the given Data using Snappy.
